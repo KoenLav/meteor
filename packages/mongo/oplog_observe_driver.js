@@ -112,25 +112,27 @@ OplogObserveDriver = function (options) {
   ));
 
   forEachTrigger(self._cursorDescription, function (trigger) {
-    self._stopHandles.push(self._mongoHandle._oplogHandle.onOplogEntry(
-      trigger, function (notification) {
+    self._stopHandles.push(self._mongoHandle._oplogHandle.onOplogEntries(
+      trigger, function (notifications) {
         Meteor._noYieldsAllowed(finishIfNeedToPollQuery(function () {
-          if (notification.dropCollection || notification.dropDatabase) {
-            // Note: this call is not allowed to block on anything (especially
-            // on waiting for oplog entries to catch up) because that will block
-            // onOplogEntry!
-            self._needToPollQuery();
-          } else {
-            var op = notification.op;
-            // All other operators should be handled depending on phase
-            if (self._phase === PHASE.QUERYING) {
-              self._handleOplogEntryQuerying(op);
+          notifications.forEach(function(notification) {
+            if (notification.dropCollection || notification.dropDatabase) {
+              // Note: this call is not allowed to block on anything (especially
+              // on waiting for oplog entries to catch up) because that will block
+              // onOplogEntry!
+              self._needToPollQuery();
             } else {
-              self._handleOplogEntrySteadyOrFetching(op);
+              var op = notification.op;
+              // All other operators should be handled depending on phase
+              if (self._phase === PHASE.QUERYING) {
+                self._handleOplogEntryQuerying(op);
+              } else {
+                self._handleOplogEntrySteadyOrFetching(op);
+              }
             }
-          }
+          });
         }));
-      }
+      },
     ));
   });
 
