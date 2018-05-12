@@ -14,6 +14,12 @@ export default class Crossbar {
     self.listenersByCollection = {};
     // An object which holds the buffered changes per collection
     self.buffersPerCollection = {};
+    // Buffer changes to the same collection which happen within x ms
+    self.bufferInterval = 5;
+    // Maximum age of the buffer
+    self.bufferMaxAge = 100;
+    // Maximum amount of notifications to store in the buffer before flushing
+    self.bufferMaxSize = 2000;
     
     self.factPackage = options.factPackage || "livedata";
     self.factName = options.factName || null;
@@ -48,11 +54,11 @@ export default class Crossbar {
     var id = self.listenerId++;
 
     var collection = self._collectionForMessage(trigger);
-    var record = {trigger: EJSON.clone(trigger), callback: callback};
-    if (! _.has(self.listenersByCollection, collection)) {
-      self.listenersByCollection[collection] = {};
-    }
-    self.listenersByCollection[collection][id] = record;
+    var listener = {trigger: EJSON.clone(trigger), callback: callback};
+    
+    self.listenersByCollection[collection] = self.listenersByCollection[collection] || {};
+
+    self.listenersByCollection[collection][id] = listener;
 
     if (self.factName && Package.facts) {
       Package.facts.Facts.incrementServerFact(
@@ -85,13 +91,13 @@ export default class Crossbar {
     var self = this;
     var collection = self._collectionForMessage(notification);
     var listenersForCollection = self.listenersByCollection[collection];
-    var buffersForCollection = self.buffersPerCollection[collection];
+    var bufferForCollection = self.buffersPerCollection[collection];
 
     if (listenersForCollection) {
       var callbackIds = [];
 
-      _.each(listenersForCollection, function (l, id) {
-        if (self._matches(notification, l.trigger)) {
+      _.each(listenersForCollection, function (listener, id) {
+        if (self._matches(notification, listener.trigger)) {
           callbackIds.push(id);
         }
       });
@@ -112,8 +118,30 @@ export default class Crossbar {
       });
     }
 
-    if (buffersForCollection) {
+    if (bufferForCollection) {
+      // Add the callback to the bufferedCalls
+      bufferForCollection.notifications.push(notification);
+
+      if (bufferForCollection.flushAt === null) {
+        bufferForCollection.flushAt = new Date().valueOf() + self.bufferMaxAge;
+      }
       
+      if (
+        bufferForCollection.notifications.length >= self.bufferMaxSize
+        || self.flushAt < new Date().valueOf()
+      ) {
+        self.flush(collection);
+        return;
+      }
+
+      if (bufferForCollection.handle) {
+        clearTimeout(bufferForCollection.handle);
+      }
+
+      bufferForCollection.handle = setTimeout(
+        self.flush.bind(self, [collection]),
+        self.bufferInterval
+      );
     }
   }
 
@@ -122,40 +150,67 @@ export default class Crossbar {
     var id = self.bufferId++;
 
     var collection = self._collectionForMessage(trigger);
-    var record = {trigger: EJSON.clone(trigger), callback: callback};
+    var listener = {trigger: EJSON.clone(trigger), callback: callback};
     
-    self.buffersPerCollection[collection] = self.buffersPerCollection[collection] || {};
-
     self.buffersPerCollection[collection] = self.buffersPerCollection[collection] || {
-      records: [],
-      buffer: []
+      listeners: [],
+      notifications: [],
+      handle: null,
+      flushAt: null
     };
 
-    self.buffersPerCollection[collection].records[id] = record;
-    
-    // When callbacks are fired within this ms interval, batch them together
-    self._bufferedCallsInterval = 10;
-    // Flush buffer at least every 500ms
-    self._bufferedCallsMaxAge = 500;
-    // The timeoutHandle for the callback buffer
-    self._bufferedCallsFlushHandle = null;
-    // Date at which the buffer should be flushed, regardless of any timeout
-    self._bufferedCallsFlushAt = null;
+    self.buffersPerCollection[collection].listeners[id] = listener;
 
     return {
       stop: function () {
-        delete self.buffersPerCollection[collection].records[id];
+        delete self.buffersPerCollection[collection].listeners[id];
 
-        if (_.isEmpty(self.buffersPerCollection[collection].records)) {
-          // TODO: clear any outstanding timeouts?
+        if (_.isEmpty(self.buffersPerCollection[collection].listeners)) {
+          clearTimeout(self.buffersPerCollection[collection].handle);
+
           delete self.buffersPerCollection[collection];
         }
       }
     };
   }
 
-  flush() {
+  flush(collection) {
+    var self = this;
+    var bufferForCollection = self.buffersPerCollection[collection];
 
+    if (bufferForCollection.handle) {
+      clearTimeout(bufferForCollection.handle);
+      
+      delete bufferForCollection.handle;
+    }
+
+    bufferForCollection.flushAt = null;
+
+    var notifications = bufferForCollection.notifications;
+    
+    bufferForCollection.notifications = [];
+
+    var filteredBuffers = {};
+
+    // Determine which notifications we should send to each listener
+    _.each(bufferForCollection.listeners, function (listener, id) {
+      var triggerString = listener.trigger.toString();
+      var filteredNotifications = filteredBuffers[triggerString] || [];
+
+      // If did not already filter for the same trigger
+      if (filteredNotifications.length === 0) {
+        // Iterate over the buffered notifications
+        _.each(notifications, function(notification) {
+          if (self._matches(notification, listener.trigger)) {
+            filteredNotifications.push(notification);
+          }
+        })
+      }
+
+      if (_.has(bufferForCollection.listeners, id)) {
+        bufferForCollection.listeners[id].callback(filteredNotifications);
+      }
+    });
   }
 
   // A notification matches a trigger if all keys that exist in both are equal.
