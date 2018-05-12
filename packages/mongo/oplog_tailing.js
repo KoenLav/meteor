@@ -99,7 +99,6 @@ _.extend(OplogHandle.prototype, {
     var originalCallback = callback;
 
     callback = Meteor.bindEnvironment(function (notifications) {
-      console.log(notifications.length);
       // XXX can we avoid this clone by making oplog.js careful?
       originalCallback(EJSON.clone(notifications));
     }, function (err) {
@@ -253,8 +252,9 @@ _.extend(OplogHandle.prototype, {
 
   _maybeStartWorker: function () {
     var self = this;
-    if (self._workerActive)
+    if (self._workerActive) {
       return;
+    }
     self._workerActive = true;
     Meteor.defer(function () {
       try {

@@ -15,11 +15,11 @@ export default class Crossbar {
     // An object which holds the buffered changes per collection
     self.buffersPerCollection = {};
     // Buffer changes to the same collection which happen within x ms
-    self.bufferInterval = 10;
+    self.bufferInterval = 5;
     // Maximum age of the buffer
-    self.bufferMaxAge = 500;
+    self.bufferMaxAge = 100;
     // Maximum amount of notifications to store in the buffer before flushing
-    self.bufferMaxSize = 1000;
+    self.bufferMaxSize = 2000;
     
     self.factPackage = options.factPackage || "livedata";
     self.factName = options.factName || null;

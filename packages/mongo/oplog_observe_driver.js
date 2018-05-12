@@ -488,6 +488,11 @@ _.extend(OplogObserveDriver.prototype, {
       // but fetch() yields.
       Meteor.defer(finishIfNeedToPollQuery(function () {
         while (!self._stopped && !self._needToFetch.empty()) {
+          // If we need to fetch more than a thousand documents, re-running is probably quicker
+          if (self._needToFetch.size() >= 1000) {
+            self._needToPollQuery();
+          }
+
           if (self._phase === PHASE.QUERYING) {
             // While fetching, we decided to go into QUERYING mode, and then we
             // saw another oplog entry, so _needToFetch is not empty. But we
@@ -642,6 +647,9 @@ _.extend(OplogObserveDriver.prototype, {
         } else if (!canDirectlyModifyDoc ||
                    self._matcher.canBecomeTrueByModifier(op.o) ||
                    (self._sorter && self._sorter.affectedByModifier(op.o))) {
+          // console.log("TEST 3");
+
+          // return;
           self._needToFetch.set(id, op.ts.toString());
           if (self._phase === PHASE.STEADY)
             self._fetchModifiedDocuments();
