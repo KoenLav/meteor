@@ -647,9 +647,6 @@ _.extend(OplogObserveDriver.prototype, {
         } else if (!canDirectlyModifyDoc ||
                    self._matcher.canBecomeTrueByModifier(op.o) ||
                    (self._sorter && self._sorter.affectedByModifier(op.o))) {
-          // console.log("TEST 3");
-
-          // return;
           self._needToFetch.set(id, op.ts.toString());
           if (self._phase === PHASE.STEADY)
             self._fetchModifiedDocuments();
