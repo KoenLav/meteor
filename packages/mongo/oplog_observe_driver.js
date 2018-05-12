@@ -115,13 +115,13 @@ OplogObserveDriver = function (options) {
     self._stopHandles.push(self._mongoHandle._oplogHandle.onOplogEntry(
       trigger, function (notification) {
         Meteor._noYieldsAllowed(finishIfNeedToPollQuery(function () {
-          var op = notification.op;
           if (notification.dropCollection || notification.dropDatabase) {
             // Note: this call is not allowed to block on anything (especially
             // on waiting for oplog entries to catch up) because that will block
             // onOplogEntry!
             self._needToPollQuery();
           } else {
+            var op = notification.op;
             // All other operators should be handled depending on phase
             if (self._phase === PHASE.QUERYING) {
               self._handleOplogEntryQuerying(op);

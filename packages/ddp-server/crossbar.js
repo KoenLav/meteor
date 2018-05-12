@@ -6,11 +6,15 @@ export default class Crossbar {
     var self = this;
     options = options || {};
 
-    self.nextId = 1;
+    self.listenerId = 1;
+    self.bufferId = 1;
     // map from collection name (string) -> listener id -> object. each object has
     // keys 'trigger', 'callback'.  As a hack, the empty string means "no
     // collection".
     self.listenersByCollection = {};
+    // An object which holds the buffered changes per collection
+    self.buffersPerCollection = {};
+    
     self.factPackage = options.factPackage || "livedata";
     self.factName = options.factName || null;
   }
@@ -41,7 +45,7 @@ export default class Crossbar {
   // callback?
   listen(trigger, callback) {
     var self = this;
-    var id = self.nextId++;
+    var id = self.listenerId++;
 
     var collection = self._collectionForMessage(trigger);
     var record = {trigger: EJSON.clone(trigger), callback: callback};
@@ -79,35 +83,79 @@ export default class Crossbar {
   // The listeners may be invoked in parallel, rather than serially.
   fire(notification) {
     var self = this;
-
     var collection = self._collectionForMessage(notification);
+    var listenersForCollection = self.listenersByCollection[collection];
+    var buffersForCollection = self.buffersPerCollection[collection];
 
-    if (! _.has(self.listenersByCollection, collection)) {
-      return;
+    if (listenersForCollection) {
+      var callbackIds = [];
+
+      _.each(listenersForCollection, function (l, id) {
+        if (self._matches(notification, l.trigger)) {
+          callbackIds.push(id);
+        }
+      });
+
+      // Listener callbacks can yield, so we need to first find all the ones that
+      // match in a single iteration over self.listenersByCollection (which can't
+      // be mutated during this iteration), and then invoke the matching
+      // callbacks, checking before each call to ensure they haven't stopped.
+      // Note that we don't have to check that
+      // self.listenersByCollection[collection] still === listenersForCollection,
+      // because the only way that stops being true is if listenersForCollection
+      // first gets reduced down to the empty object (and then never gets
+      // increased again).
+      _.each(callbackIds, function (id) {
+        if (_.has(listenersForCollection, id)) {
+          listenersForCollection[id].callback(notification);
+        }
+      });
     }
 
-    var listenersForCollection = self.listenersByCollection[collection];
-    var callbackIds = [];
-    _.each(listenersForCollection, function (l, id) {
-      if (self._matches(notification, l.trigger)) {
-        callbackIds.push(id);
-      }
-    });
+    if (buffersForCollection) {
+      
+    }
+  }
 
-    // Listener callbacks can yield, so we need to first find all the ones that
-    // match in a single iteration over self.listenersByCollection (which can't
-    // be mutated during this iteration), and then invoke the matching
-    // callbacks, checking before each call to ensure they haven't stopped.
-    // Note that we don't have to check that
-    // self.listenersByCollection[collection] still === listenersForCollection,
-    // because the only way that stops being true is if listenersForCollection
-    // first gets reduced down to the empty object (and then never gets
-    // increased again).
-    _.each(callbackIds, function (id) {
-      if (_.has(listenersForCollection, id)) {
-        listenersForCollection[id].callback(notification);
+  buffer(trigger, callback) {
+    var self = this;
+    var id = self.bufferId++;
+
+    var collection = self._collectionForMessage(trigger);
+    var record = {trigger: EJSON.clone(trigger), callback: callback};
+    
+    self.buffersPerCollection[collection] = self.buffersPerCollection[collection] || {};
+
+    self.buffersPerCollection[collection] = self.buffersPerCollection[collection] || {
+      records: [],
+      buffer: []
+    };
+
+    self.buffersPerCollection[collection].records[id] = record;
+    
+    // When callbacks are fired within this ms interval, batch them together
+    self._bufferedCallsInterval = 10;
+    // Flush buffer at least every 500ms
+    self._bufferedCallsMaxAge = 500;
+    // The timeoutHandle for the callback buffer
+    self._bufferedCallsFlushHandle = null;
+    // Date at which the buffer should be flushed, regardless of any timeout
+    self._bufferedCallsFlushAt = null;
+
+    return {
+      stop: function () {
+        delete self.buffersPerCollection[collection].records[id];
+
+        if (_.isEmpty(self.buffersPerCollection[collection].records)) {
+          // TODO: clear any outstanding timeouts?
+          delete self.buffersPerCollection[collection];
+        }
       }
-    });
+    };
+  }
+
+  flush() {
+
   }
 
   // A notification matches a trigger if all keys that exist in both are equal.
