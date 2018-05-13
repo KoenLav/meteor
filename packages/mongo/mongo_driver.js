@@ -892,11 +892,10 @@ Cursor.prototype.getTransform = function () {
 // When you call Meteor.publish() with a function that returns a Cursor, we need
 // to transmute it into the equivalent subscription.  This is the function that
 // does that.
-
 Cursor.prototype._publishCursor = function (sub) {
   var self = this;
-  var collection = self._cursorDescription.collectionName;
-  return Mongo.Collection._publishCursor(self, sub, collection);
+  var collectionName = self._cursorDescription.collectionName;
+  return Mongo.Collection._publishCursor(self, sub, collectionName);
 };
 
 // Used to guarantee that publish functions return at most one cursor per
@@ -914,27 +913,39 @@ Cursor.prototype.observe = function (callbacks) {
 
 Cursor.prototype.observeChanges = function (callbacks) {
   var self = this;
-  var methods = [
-    'addedAt',
-    'added',
-    'changedAt',
-    'changed',
-    'removedAt',
-    'removed',
-    'movedTo'
-  ];
+  var allowBuffering = _.isFunction(callbacks);
   var ordered = LocalCollection._observeChangesCallbacksAreOrdered(callbacks);
 
   // XXX: Can we find out if callbacks are from observe?
   var exceptionName = ' observe/observeChanges callback';
-  methods.forEach(function (method) {
-    if (callbacks[method] && typeof callbacks[method] == "function") {
-      callbacks[method] = Meteor.bindEnvironment(callbacks[method], method + exceptionName);
-    }
-  });
 
-  return self._mongo._observeChanges(
-    self._cursorDescription, ordered, callbacks);
+  if (allowBuffering) {
+    var boundCallback = Meteor.bindEnvironment(callbacks, 'Messages' + exceptionName);
+
+    return self._mongo._observeChanges(
+      self._cursorDescription, allowBuffering, ordered, boundCallback);
+  }
+  else {
+    var boundCallbacks = [];
+    var methods = [
+      'addedAt',
+      'added',
+      'changedAt',
+      'changed',
+      'removedAt',
+      'removed',
+      'movedTo'
+    ];
+    
+    methods.forEach(function (method) {
+      if (callbacks[method] && typeof callbacks[method] == "function") {
+        boundCallbacks[method] = Meteor.bindEnvironment(callbacks[method], method + exceptionName);
+      }
+    });
+  
+    return self._mongo._observeChanges(
+      self._cursorDescription, allowBuffering, ordered, boundCallbacks);
+  }
 };
 
 MongoConnection.prototype._createSynchronousCursor = function(
@@ -1186,7 +1197,7 @@ MongoConnection.prototype.tail = function (cursorDescription, docCallback) {
 };
 
 MongoConnection.prototype._observeChanges = function (
-    cursorDescription, ordered, callbacks) {
+    cursorDescription, allowBuffering, ordered, callbacks) {
   var self = this;
 
   if (cursorDescription.options.tailable) {
@@ -1202,7 +1213,10 @@ MongoConnection.prototype._observeChanges = function (
   }
 
   var observeKey = EJSON.stringify(
-    _.extend({ordered: ordered}, cursorDescription));
+    _.extend({
+      allowBuffering: allowBuffering,
+      ordered: ordered
+    }, cursorDescription));
 
   var multiplexer, observeDriver;
   var firstHandle = false;
@@ -1217,6 +1231,7 @@ MongoConnection.prototype._observeChanges = function (
       firstHandle = true;
       // Create a new ObserveMultiplexer.
       multiplexer = new ObserveMultiplexer({
+        allowBuffering: allowBuffering,
         ordered: ordered,
         onStop: function () {
           delete self._observeMultiplexers[observeKey];
@@ -1269,6 +1284,7 @@ MongoConnection.prototype._observeChanges = function (
       }], function (f) { return f(); });  // invoke each function
 
     var driverClass = canUseOplog ? OplogObserveDriver : PollingObserveDriver;
+
     observeDriver = new driverClass({
       cursorDescription: cursorDescription,
       mongoHandle: self,

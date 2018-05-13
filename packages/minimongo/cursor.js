@@ -298,6 +298,10 @@ export default class Cursor {
       };
     };
 
+    if (_.isFunction(options)) {
+      query.messages = wrapCallback(options);
+    }
+    
     query.added = wrapCallback(options.added);
     query.changed = wrapCallback(options.changed);
     query.removed = wrapCallback(options.removed);
@@ -310,18 +314,36 @@ export default class Cursor {
     if (!options._suppress_initial && !this.collection.paused) {
       const results = ordered ? query.results : query.results._map;
 
+      const messages = [];
+
       Object.keys(results).forEach(key => {
         const doc = results[key];
         const fields = EJSON.clone(doc);
 
         delete fields._id;
 
-        if (ordered) {
-          query.addedBefore(doc._id, this._projectionFn(fields), null);
-        }
+        const projection = this._projectionFn(fields);
 
-        query.added(doc._id, this._projectionFn(fields));
+        if (query.messages) {
+          messages.push({
+            action: 'added',
+            args: [
+              doc._id,
+              projection
+            ]
+          });
+        } else {
+          if (ordered) {
+            query.addedBefore(doc._id, projection, null);
+          } else {
+            query.added(doc._id, projection);
+          }
+        }
       });
+
+      if (query.messages) {
+        query.messages(messages);
+      }
     }
 
     const handle = Object.assign(new LocalCollection.ObserveHandle, {
