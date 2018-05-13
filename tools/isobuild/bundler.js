@@ -566,6 +566,23 @@ class File {
     // file is not intended to be served over HTTP).
     this.url = null;
 
+    // A prefix that will be prepended to this.url.
+    // Prefixing is currently restricted to web.cordova URLs.
+    if (options.arch.startsWith("web.") &&
+        // Using the isModern function from the modern-browsers package,
+        // the webapp and dynamic-import packages can automatically
+        // determine whether a client should receive resources from the
+        // web.browser or web.browser.legacy architecture, so those
+        // architectures do not need a URL prefix. Other architectures,
+        // such as web.cordova, still need a prefix like /__cordova/.
+        options.arch !== "web.browser" &&
+        options.arch !== "web.browser.legacy") {
+      this.urlPrefix = "/__" +
+        options.arch.split(".").slice(1).join(".");
+    } else {
+      this.urlPrefix = "";
+    }
+
     // Is this file guaranteed to never change, so that we can let it be
     // cached forever? Only makes sense of self.url is set.
     this.cacheable = options.cacheable || false;
@@ -644,7 +661,8 @@ class File {
   // url, useful for query parameters.
   setUrlToHash(fileAndUrlSuffix, urlSuffix) {
     urlSuffix = urlSuffix || "";
-    this.url = "/" + this.hash() + fileAndUrlSuffix + urlSuffix;
+    this.url = this.urlPrefix + "/" +
+      this.hash() + fileAndUrlSuffix + urlSuffix;
     this.cacheable = true;
     this.targetPath = this.hash() + fileAndUrlSuffix;
   }
@@ -668,7 +686,7 @@ class File {
   // Given a relative path like 'a/b/c' (where '/' is this system's
   // path component separator), produce a URL that always starts with
   // a forward slash and that uses a literal forward slash as the
-  // component separator.
+  // component separator. Also optionally add browser.legacy prefix.
   setUrlFromRelPath(relPath) {
     var url = relPath;
 
@@ -679,7 +697,7 @@ class File {
     // XXX replacing colons with underscores as colon is hard to escape later
     // on different targets and generally is not a good separator for web.
     url = colonConverter.convert(url);
-    this.url = url;
+    this.url = this.urlPrefix + url;
   }
 
   setTargetPathFromRelPath(relPath) {
@@ -1081,9 +1099,10 @@ class Target {
 
         const f = new File({
           info: 'unbuild ' + resource,
+          arch: this.arch,
           data: resource.data,
           cacheable: false,
-          hash: resource.hash
+          hash: resource.hash,
         });
 
         const relPath = isOs
@@ -1125,7 +1144,12 @@ class Target {
             return;
           }
 
-          const f = new File({ info: 'resource ' + resource.servePath, data: resource.data, cacheable: false});
+          const f = new File({
+            info: 'resource ' + resource.servePath,
+            arch: this.arch,
+            data: resource.data,
+            cacheable: false,
+          });
 
           const relPath = stripLeadingSlash(resource.servePath);
           f.setTargetPathFromRelPath(relPath);
@@ -1204,9 +1228,10 @@ class Target {
   minifyJs(minifierDef, minifyMode) {
     const staticFiles = [];
     const dynamicFiles = [];
+    const { arch } = this;
 
     this.js.forEach(file => {
-      const jsf = new JsFile(file, { arch: this.arch });
+      const jsf = new JsFile(file, { arch });
 
       if (file.targetPath.startsWith("dynamic/")) {
         // Make sure file._hash is cached.
@@ -1260,6 +1285,7 @@ class Target {
 
         const newFile = new File({
           info: 'minified js',
+          arch,
           data: Buffer.from(file.data, 'utf8'),
         });
 
@@ -1288,6 +1314,7 @@ class Target {
           const contents = newFile.contents();
           const statsFile = new File({
             info: "bundle size stats JSON",
+            arch,
             data: Buffer.from(JSON.stringify({
               minifier: {
                 name: minifierDef.isopack.name,
@@ -1479,10 +1506,9 @@ class ClientTarget extends Target {
 
   // Minify the CSS in this target
   minifyCss(minifierDef, minifyMode) {
+    const { arch } = this;
     const sources = this.css.map((file) => {
-      return new CssFile(file, {
-        arch: this.arch
-      });
+      return new CssFile(file, { arch });
     });
     const minifier = minifierDef.userPlugin.processFilesForBundle.bind(
       minifierDef.userPlugin);
@@ -1500,6 +1526,7 @@ class ClientTarget extends Target {
       return source._minifiedFiles.map((file) => {
         const newFile = new File({
           info: 'minified css',
+          arch,
           data: Buffer.from(file.data, 'utf8')
         });
         if (file.sourceMap) {

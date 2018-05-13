@@ -44,6 +44,13 @@
   application code. [PR #9771](https://github.com/meteor/meteor/pull/9771)
   [Feature #6](https://github.com/meteor/meteor-feature-requests/issues/6)
 
+  > Note: since compilation of npm packages can now be enabled using the
+    techniques described above, Meteor will no longer automatically scan
+    `node_modules` directories for modules that can be compiled by
+    compiler plugins. If you have been using that functionality to import
+    compiled-to-JS modules from `node_modules`, you should start using the
+    symlinking strategy instead.
+
 * The `npm` package has been upgraded to version 5.8.0, and our
   [fork](https://github.com/meteor/pacote/tree/v7.6.1-meteor) of its
   `pacote` dependency has been rebased against version 7.6.1.
@@ -102,11 +109,11 @@
   want to run. [PR #9714](https://github.com/meteor/meteor/pull/9714)
 
 * The `meteor-babel` npm package has been updated to version
-  7.0.0-beta.46.
+  7.0.0-beta.46-1.
 
 * The `reify` npm package has been updated to version 0.15.1.
 
-* The `optimism` npm package has been updated to version 0.4.0.
+* The `optimism` npm package has been updated to version 0.6.3.
 
 * The `minifier-js` package has been updated to use `uglify-es` 3.3.9.
 
@@ -115,10 +122,10 @@
   `selftest.skip.define('some test', ...` will skip running "some test".
   [PR #9579](https://github.com/meteor/meteor/pull/9579)
 
-* Mongo has been upgraded to version 3.6.3 for 64-bit systems, and 3.2.19
+* Mongo has been upgraded to version 3.6.4 for 64-bit systems, and 3.2.19
   for 32-bit systems. [PR #9632](https://github.com/meteor/meteor/pull/9632)
 
-  **NOTE:** After upgrading an application to use Mongo 3.6.2, it has been
+  **NOTE:** After upgrading an application to use Mongo 3.6.4, it has been
   observed ([#9591](https://github.com/meteor/meteor/issues/9591))
   that attempting to run that application with an older version of
   Meteor (via `meteor --release X`), that uses an older version of Mongo, can
@@ -131,6 +138,11 @@
   ~/.meteor/packages/meteor-tool/1.6.0_1/mt-os.osx.x86_64/dev_bundle/mongodb/bin/mongod --dbpath /my-app/.meteor/local/db --repair
   ```
   [PR #9632](https://github.com/meteor/meteor/pull/9632)
+
+* The `mongodb` driver package has been updated from version 2.2.34 to
+  version 3.0.7. [PR #9790](https://github.com/meteor/meteor/pull/9790)
+  [PR #9831](https://github.com/meteor/meteor/pull/9831)
+  [Feature #268](https://github.com/meteor/meteor-feature-requests/issues/268)
 
 * The `cordova-plugin-meteor-webapp` package depended on by the Meteor
   `webapp` package has been updated to version 1.6.0.
@@ -174,6 +186,10 @@
   the `<head />` section as before (for backwards compatibility).
   [Feature #24](https://github.com/meteor/meteor-feature-requests/issues/24)
   [PR #9657](https://github.com/meteor/meteor/pull/9657)
+
+* The `meteor create` command now supports a `--minimal` option, which
+  creates an empty app (like `--bare`) with as few Meteor packages as
+  possible, to minimize client-side application size.
 
 ## v1.6.1.1, 2018-04-02
 
