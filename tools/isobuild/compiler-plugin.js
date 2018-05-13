@@ -367,7 +367,12 @@ class InputFile extends buildPluginModule.InputFile {
     }
 
     const batch = this._resourceSlot.packageSourceBatch;
-    const resolver = batch.getResolver();
+    const resolver = batch.getResolver({
+      // Make sure we use a server architecture when resolving, so that we
+      // don't accidentally use package.json "browser" fields.
+      // https://github.com/meteor/meteor/issues/9870
+      targetArch: archinfo.host(),
+    });
     const resolved = resolver.resolve(id, parentPath);
 
     if (resolved === "missing") {
@@ -851,7 +856,7 @@ export class PackageSourceBatch {
     self.sourceRoot = sourceRoot;
     self.linkerCacheDir = linkerCacheDir;
     self.importExtensions = [".js", ".json"];
-    self._resolver = null;
+    self._nodeModulesPaths = null;
 
     var sourceProcessorSet = self._getSourceProcessorSet();
 
@@ -944,28 +949,31 @@ export class PackageSourceBatch {
     }
   }
 
-  getResolver() {
-    if (this._resolver) {
-      return this._resolver;
-    }
-
-    const nmds = this.unibuild.nodeModulesDirectories;
-    const nodeModulesPaths = [];
-
-    _.each(nmds, (nmd, path) => {
-      if (! nmd.local) {
-        nodeModulesPaths.push(
-          files.convertToOSPath(path.replace(/\/$/g, "")));
-      }
-    });
-
-    return this._resolver = Resolver.getOrCreate({
+  getResolver(options = {}) {
+    return Resolver.getOrCreate({
       caller: "PackageSourceBatch#getResolver",
       sourceRoot: this.sourceRoot,
       targetArch: this.processor.arch,
       extensions: this.importExtensions,
-      nodeModulesPaths,
+      nodeModulesPaths: this._getNodeModulesPaths(),
+      ...options,
     });
+  }
+
+  _getNodeModulesPaths() {
+    if (! this._nodeModulesPaths) {
+      const nmds = this.unibuild.nodeModulesDirectories;
+      this._nodeModulesPaths = [];
+
+      _.each(nmds, (nmd, path) => {
+        if (! nmd.local) {
+          this._nodeModulesPaths.push(
+            files.convertToOSPath(path.replace(/\/$/g, "")));
+        }
+      });
+    }
+
+    return this._nodeModulesPaths;
   }
 
   _getSourceProcessorSet() {
