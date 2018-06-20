@@ -146,9 +146,9 @@ export default class Crossbar {
         self.bufferInterval
       );
     }
-  },
+  }
 
-  buffer: function(trigger, callback) {
+  buffer(trigger, callback) {
     var self = this;
     var id = self.bufferId++;
 
@@ -175,7 +175,7 @@ export default class Crossbar {
         }
       }
     };
-  },
+  }
 
   flush(collection) {
     var self = this;
