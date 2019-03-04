@@ -362,17 +362,25 @@ Object.assign(Mongo.Collection.prototype, {
 
 Object.assign(Mongo.Collection, {
   _publishCursor(cursor, sub, collection) {
-    var observeHandle = cursor.observeChanges({
-      added: function (id, fields) {
-        sub.added(collection, id, fields);
-      },
-      changed: function (id, fields) {
-        sub.changed(collection, id, fields);
-      },
-      removed: function (id) {
-        sub.removed(collection, id);
-      }
-    });
+    // TODO: allow the user to define whether they want to enable buffering
+    if (Meteor.isServer) {
+      var observeHandle = cursor.observeChanges(function(messages) {
+        sub.messages(collectionName, messages);
+      });
+    }
+    else {
+      var observeHandle = cursor.observeChanges({
+        added: function (id, fields) {
+          sub.added(collection, id, fields);
+        },
+        changed: function (id, fields) {
+          sub.changed(collection, id, fields);
+        },
+        removed: function (id) {
+          sub.removed(collection, id);
+        }
+      });
+    }
 
     // We don't call sub.ready() here: it gets called in livedata_server, after
     // possibly calling _publishCursor on multiple returned cursors.

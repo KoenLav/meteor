@@ -1074,8 +1074,7 @@ _.extend(Session.prototype, {
  * @instanceName this
  * @showInstanceName true
  */
-var Subscription = function (
-    session, handler, subscriptionId, params, name) {
+var Subscription = function (session, handler, subscriptionId, params, name) {
   var self = this;
   self._session = session; // type is Session
 
@@ -1355,6 +1354,13 @@ _.extend(Subscription.prototype, {
   _isDeactivated: function () {
     var self = this;
     return self._deactivated || self._session.inQueue === null;
+  },
+
+  messages: function(collectionName, messages) {
+    var self = this;
+    if (self._isDeactivated())
+      return;
+    self._session.messages(self._subscriptionHandle, collectionName, messages);
   },
 
   /**

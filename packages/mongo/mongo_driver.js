@@ -925,27 +925,36 @@ Cursor.prototype.observe = function (callbacks) {
 
 Cursor.prototype.observeChanges = function (callbacks) {
   var self = this;
-  var methods = [
-    'addedAt',
-    'added',
-    'changedAt',
-    'changed',
-    'removedAt',
-    'removed',
-    'movedTo'
-  ];
+  var sendBufferedMessages = _.isFunction(callbacks);
   var ordered = LocalCollection._observeChangesCallbacksAreOrdered(callbacks);
 
-  // XXX: Can we find out if callbacks are from observe?
-  var exceptionName = ' observe/observeChanges callback';
-  methods.forEach(function (method) {
-    if (callbacks[method] && typeof callbacks[method] == "function") {
-      callbacks[method] = Meteor.bindEnvironment(callbacks[method], method + exceptionName);
-    }
-  });
+  if (sendBufferedMessages) {
+    var boundCallback = Meteor.bindEnvironment(callbacks, 'Messages' + exceptionName);
 
-  return self._mongo._observeChanges(
-    self._cursorDescription, ordered, callbacks);
+    return self._mongo._observeChanges(self._cursorDescription, ordered, boundCallback);
+  }
+  else {
+    var methods = [
+      'addedAt',
+      'added',
+      'changedAt',
+      'changed',
+      'removedAt',
+      'removed',
+      'movedTo'
+    ];
+  
+    // XXX: Can we find out if callbacks are from observe?
+    var exceptionName = ' observe/observeChanges callback';
+  
+    methods.forEach(function (method) {
+      if (callbacks[method] && typeof callbacks[method] == "function") {
+        callbacks[method] = Meteor.bindEnvironment(callbacks[method], method + exceptionName);
+      }
+    });
+  
+    return self._mongo._observeChanges(self._cursorDescription, ordered, callbacks);
+  }
 };
 
 MongoConnection.prototype._createSynchronousCursor = function(
@@ -1281,7 +1290,8 @@ MongoConnection.prototype._observeChanges = function (
         onStop: function () {
           delete self._observeMultiplexers[observeKey];
           observeDriver.stop();
-        }
+        },
+        buffer: _.isFunction(callbacks)
       });
       self._observeMultiplexers[observeKey] = multiplexer;
     }
@@ -1328,6 +1338,7 @@ MongoConnection.prototype._observeChanges = function (
       }], function (f) { return f(); });  // invoke each function
 
     var driverClass = canUseOplog ? OplogObserveDriver : PollingObserveDriver;
+    
     observeDriver = new driverClass({
       cursorDescription: cursorDescription,
       mongoHandle: self,

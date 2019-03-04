@@ -20,6 +20,7 @@ ObserveMultiplexer = function (options) {
   // running. removeHandle uses this to know if it's time to call the onStop
   // callback.
   self._addHandleTasksScheduledButNotPerformed = 0;
+  self._buffer = options.buffer || false;
 
   _.each(self.callbackNames(), function (callbackName) {
     self[callbackName] = function (/* ... */) {
@@ -192,46 +193,69 @@ _.extend(ObserveMultiplexer.prototype, {
     var self = this;
     if (self._queue.safeToRunTask())
       throw Error("_sendAdds may only be called from within a task!");
-    var add = self._ordered ? handle._addedBefore : handle._added;
-    if (!add)
-      return;
-    // note: docs may be an _IdMap or an OrderedDict
-    self._cache.docs.forEach(function (doc, id) {
-      if (!_.has(self._handles, handle._id))
-        throw Error("handle got removed before sending initial adds!");
-      var fields = EJSON.clone(doc);
-      delete fields._id;
-      if (self._ordered)
-        add(id, fields, null); // we're going in order, so add at end
-      else
-        add(id, fields);
-    });
+
+    if (!_.has(self._handles, handle._id))
+      throw Error("handle got removed before sending initial adds!");
+
+    if (self.buffer) {
+      var messages = self._messages;
+      
+      console.log(self._cache.docs[0]);
+
+      self._cache.docs.forEach(function (doc, id) {
+        // TODO: call EJSON.clone?
+        
+        messages([doc]);
+      });
+    }
+    else {
+      var add = self._ordered ? handle._addedBefore : handle._added;
+      if (!add)
+        return;
+      // note: docs may be an _IdMap or an OrderedDict
+      self._cache.docs.forEach(function (doc, id) {
+        var fields = EJSON.clone(doc);
+        delete fields._id;
+        if (self._ordered)
+          add(id, fields, null); // we're going in order, so add at end
+        else
+          add(id, fields);
+      });
+    }
   }
 });
 
-
 var nextObserveHandleId = 1;
+
 ObserveHandle = function (multiplexer, callbacks) {
   var self = this;
   // The end user is only supposed to call stop().  The other fields are
   // accessible to the multiplexer, though.
   self._multiplexer = multiplexer;
-  _.each(multiplexer.callbackNames(), function (name) {
-    if (callbacks[name]) {
-      self['_' + name] = callbacks[name];
-    } else if (name === "addedBefore" && callbacks.added) {
-      // Special case: if you specify "added" and "movedBefore", you get an
-      // ordered observe where for some reason you don't get ordering data on
-      // the adds.  I dunno, we wrote tests for it, there must have been a
-      // reason.
-      self._addedBefore = function (id, fields, before) {
-        callbacks.added(id, fields);
-      };
-    }
-  });
+
+  if (_.isFunction(callbacks)) {
+    self._messages = callbacks;
+  }
+  else {
+    _.each(multiplexer.callbackNames(), function (name) {
+      if (callbacks[name]) {
+        self['_' + name] = callbacks[name];
+      } else if (name === "addedBefore" && callbacks.added) {
+        // Special case: if you specify "added" and "movedBefore", you get an
+        // ordered observe where for some reason you don't get ordering data on
+        // the adds.  I dunno, we wrote tests for it, there must have been a
+        // reason.
+        self._addedBefore = function (id, fields, before) {
+          callbacks.added(id, fields);
+        };
+      }
+    });
+  }
+
   self._stopped = false;
   self._id = nextObserveHandleId++;
 };
+
 ObserveHandle.prototype.stop = function () {
   var self = this;
   if (self._stopped)
